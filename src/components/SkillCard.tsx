@@ -23,9 +23,14 @@ const SkillCard = ({
 	const handleCopyCommand = async (event: MouseEvent<HTMLButtonElement>) => {
 		event.preventDefault();
 		event.stopPropagation();
-		await navigator.clipboard.writeText(installCommand);
-		setCopied(true);
-		setTimeout(() => setCopied(false), 2000);
+
+		try {
+			await navigator.clipboard.writeText(installCommand);
+			setCopied(true);
+			setTimeout(() => setCopied(false), 2000);
+		} catch {
+			setCopied(false);
+		}
 	};
 
 	return (
@@ -57,7 +62,11 @@ const SkillCard = ({
 						<img src="/logo512.png" alt="author avatar" className="avatar" />
 						<div className="author-copy">
 							<p>Dani</p>
-							<p>{new Date(createdAt as string).toLocaleDateString()}</p>
+							<p>
+								{createdAt
+									? new Date(createdAt).toLocaleDateString()
+									: "Unknown date"}
+							</p>
 						</div>
 					</div>
 
