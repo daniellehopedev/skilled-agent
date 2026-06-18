@@ -466,11 +466,39 @@
     }
 
     .chrome-bar {
-      @apply flex items-center;
+      @apply grid grid-cols-[auto_1fr_auto] items-center gap-3;
+    }
+
+    .lights {
+      @apply flex w-[3.25rem] shrink-0 gap-2;
+    }
+
+    .light {
+      @apply h-3 w-3 rounded-full;
+
+      &.red {
+        background-color: #ff5f56;
+      }
+
+      &.amber {
+        background-color: #ffbd2e;
+      }
+
+      &.green {
+        background-color: #27c93f;
+      }
     }
 
     .host {
-      @apply text-[10px] font-bold uppercase tracking-widest text-text-muted/50;
+      @apply flex min-w-0 justify-center;
+    }
+
+    .host-label {
+      @apply truncate rounded-full border border-border-subtle bg-base/60 px-3 py-0.5 font-mono text-[10px] font-medium tracking-wide text-text-muted/70;
+    }
+
+    .chrome-spacer {
+      @apply w-[3.25rem] shrink-0;
     }
 
     .body {
