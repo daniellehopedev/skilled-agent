@@ -7,6 +7,7 @@ import {
 	Copy,
 	MessageSquare,
 } from "lucide-react";
+import { usePostHog } from "posthog-js/react";
 import { type MouseEvent, useState } from "react";
 
 const SkillCard = ({
@@ -14,11 +15,14 @@ const SkillCard = ({
 	category,
 	createdAt,
 	description,
+	id,
 	installCommand,
+	slug,
 	tags,
 	title,
 }: SkillRecord) => {
 	const [copied, setCopied] = useState(false);
+	const posthog = usePostHog();
 
 	const handleCopyCommand = async (event: MouseEvent<HTMLButtonElement>) => {
 		event.preventDefault();
@@ -28,9 +32,25 @@ const SkillCard = ({
 			await navigator.clipboard.writeText(installCommand);
 			setCopied(true);
 			setTimeout(() => setCopied(false), 2000);
+			posthog.capture("install_command_copied", {
+				skill_id: id,
+				skill_slug: slug,
+				skill_title: title,
+				skill_category: category,
+				install_command: installCommand,
+			});
 		} catch {
 			setCopied(false);
 		}
+	};
+
+	const handleOpenSkill = () => {
+		posthog.capture("skill_card_opened", {
+			skill_id: id,
+			skill_slug: slug,
+			skill_title: title,
+			skill_category: category,
+		});
 	};
 
 	return (
@@ -40,6 +60,7 @@ const SkillCard = ({
 				tabIndex={-1}
 				aria-label={`Open ${title}`}
 				className="overlay"
+				onClick={handleOpenSkill}
 			/>
 
 			<div className="chrome">
@@ -110,7 +131,12 @@ const SkillCard = ({
 					</div>
 
 					<div className="actions">
-						<Link to="/skills" className="open" title={`Open ${title}`}>
+						<Link
+							to="/skills"
+							className="open"
+							title={`Open ${title}`}
+							onClick={handleOpenSkill}
+						>
 							<span>Open</span>
 							<ArrowUpRight size={14} />
 						</Link>
