@@ -7,25 +7,52 @@ import {
 	Copy,
 	MessageSquare,
 } from "lucide-react";
+import { usePostHog } from "posthog-js/react";
 import { type MouseEvent, useState } from "react";
+import type { GetSkillsData } from "#/dataconnect-generated";
+
+type SkillCardProps = GetSkillsData["skills"][number];
 
 const SkillCard = ({
-	authorEmail,
-	category,
 	createdAt,
 	description,
 	installCommand,
 	tags,
 	title,
-}: SkillRecord) => {
+	author,
+}: SkillCardProps) => {
 	const [copied, setCopied] = useState(false);
+	const posthog = usePostHog();
+
+	const category = tags[0] ?? "General";
 
 	const handleCopyCommand = async (event: MouseEvent<HTMLButtonElement>) => {
 		event.preventDefault();
 		event.stopPropagation();
-		await navigator.clipboard.writeText(installCommand);
-		setCopied(true);
-		setTimeout(() => setCopied(false), 2000);
+
+		try {
+			await navigator.clipboard.writeText(installCommand);
+			setCopied(true);
+			setTimeout(() => setCopied(false), 2000);
+			posthog.capture("install_command_copied", {
+				skill_id: id,
+				skill_slug: slug,
+				skill_title: title,
+				skill_category: category,
+				install_command: installCommand,
+			});
+		} catch {
+			setCopied(false);
+		}
+	};
+
+	const handleOpenSkill = () => {
+		posthog.capture("skill_card_opened", {
+			skill_id: id,
+			skill_slug: slug,
+			skill_title: title,
+			skill_category: category,
+		});
 	};
 
 	return (
@@ -35,6 +62,7 @@ const SkillCard = ({
 				tabIndex={-1}
 				aria-label={`Open ${title}`}
 				className="overlay"
+				onClick={handleOpenSkill}
 			/>
 
 			<div className="chrome">
@@ -54,10 +82,18 @@ const SkillCard = ({
 			<div className="body">
 				<div className="meta">
 					<div className="author">
-						<img src="/logo512.png" alt="author avatar" className="avatar" />
+						<img
+							src={author.imageUrl || "/logo512.png"}
+							alt={`${author.username} avatar`}
+							className="avatar"
+						/>
 						<div className="author-copy">
-							<p>Dani</p>
-							<p>{new Date(createdAt as string).toLocaleDateString()}</p>
+							<p>{author.username}</p>
+							<p>
+								{createdAt
+									? new Date(createdAt).toLocaleDateString()
+									: "Unknown date"}
+							</p>
 						</div>
 					</div>
 
@@ -96,12 +132,17 @@ const SkillCard = ({
 
 						<div className="comments">
 							<MessageSquare size={14} />
-							<span>{authorEmail ? 1 : 0}</span>
+							<span>{author.email ? 1 : 0}</span>
 						</div>
 					</div>
 
 					<div className="actions">
-						<Link to="/skills" className="open" title={`Open ${title}`}>
+						<Link
+							to="/skills"
+							className="open"
+							title={`Open ${title}`}
+							onClick={handleOpenSkill}
+						>
 							<span>Open</span>
 							<ArrowUpRight size={14} />
 						</Link>
