@@ -1,259 +1,210 @@
-Welcome to your new TanStack Start app! 
+# SkilledAgent
 
-# Getting Started
+SkilledAgent is a registry for procedural agent skills — reusable capabilities that coding agents can discover, install, and run. The app provides a route-driven workspace where authors publish skills and users browse a live catalog backed by a PostgreSQL database.
 
-To run this application:
+## What it does
+
+- **Browse skills** — The home page loads the most recently created skills from the database and renders them as interactive cards with install commands, tags, and author metadata.
+- **Authenticate users** — Clerk handles sign-in and sign-up. Signed-in users are identified in PostHog for product analytics.
+- **Publish skills** *(in progress)* — The data model and Firebase Data Connect schema support skill creation; dedicated `/skills` and `/skills/new` routes are linked from the UI but not yet implemented.
+
+Each skill record includes a title, description, tags, install command, prompt configuration, usage example, and a relationship to the authoring user.
+
+## Architecture
+
+```mermaid
+flowchart TB
+  subgraph client [Browser]
+    UI[React UI]
+    Router[TanStack Router]
+    PH[PostHog Client]
+  end
+
+  subgraph server [TanStack Start Server]
+    SF[Server Functions]
+    CM[Clerk Middleware]
+  end
+
+  subgraph external [External Services]
+    Clerk[Clerk Auth]
+    DC[Firebase Data Connect]
+    PG[(Cloud SQL PostgreSQL)]
+    PHS[PostHog]
+  end
+
+  UI --> Router
+  Router --> SF
+  SF --> DC
+  DC --> PG
+  CM --> Clerk
+  UI --> PH
+  PH --> PHS
+  Router --> Clerk
+```
+
+### Request flow (home page)
+
+1. The `/` route loader calls a TanStack Start **server function** (`getSkillsFn`).
+2. The server function invokes the generated **Firebase Data Connect** SDK (`getSkills`).
+3. Data Connect runs the `GetSkills` GraphQL query against **PostgreSQL** (Cloud SQL in production, PGlite emulator locally).
+4. Results are passed to the route component, which renders `SkillCard` components.
+
+Authentication runs through **Clerk middleware** on the server (`src/start.ts`) and **ClerkProvider** in the root layout. Data Connect queries used on the home page are public; future write operations will require authenticated access levels in the connector.
+
+### Tech stack
+
+| Layer | Technology |
+| --- | --- |
+| Framework | [TanStack Start](https://tanstack.com/start) (SSR React) |
+| Routing | [TanStack Router](https://tanstack.com/router) (file-based) |
+| Data fetching | Route loaders, server functions, [TanStack Query](https://tanstack.com/query) |
+| Auth | [Clerk](https://clerk.com) via `@clerk/tanstack-react-start` |
+| Database | [Firebase Data Connect](https://firebase.google.com/docs/data-connect) → PostgreSQL |
+| Analytics | [PostHog](https://posthog.com) (client + server SDKs) |
+| Styling | [Tailwind CSS v4](https://tailwindcss.com), [shadcn/ui](https://ui.shadcn.com) |
+| Tooling | Vite, TypeScript, Biome, Vitest |
+
+## Project structure
+
+```
+skilled-agent/
+├── src/
+│   ├── routes/                  # File-based routes
+│   │   ├── __root.tsx           # App shell, providers, layout
+│   │   ├── index.tsx            # Home page (skill listing)
+│   │   └── __auth/              # Clerk sign-in / sign-up pages
+│   ├── components/              # UI (Navbar, SkillCard, Crosshair)
+│   ├── lib/
+│   │   └── firebase.ts          # Firebase app + Data Connect client
+│   ├── integrations/
+│   │   └── tanstack-query/      # Query client setup
+│   ├── dataconnect-generated/   # Auto-generated Data Connect SDK (do not edit)
+│   ├── start.ts                 # TanStack Start config + Clerk middleware
+│   └── router.tsx               # Router factory
+├── dataconnect/
+│   ├── schema/schema.gql        # User and Skill table definitions
+│   ├── connectors/queries.gql   # GetSkills query exposed to the app
+│   └── dataconnect.yaml         # Service and Cloud SQL configuration
+├── firebase.json                # Firebase emulator config
+└── vite.config.ts               # Vite + PostHog dev proxy
+```
+
+## Data model
+
+Firebase Data Connect defines two tables in `dataconnect/schema/schema.gql`:
+
+**User** — keyed by Clerk ID
+
+- `clerkId`, `email`, `username`, `imageUrl`
+
+**Skill** — authored by a user
+
+- `id`, `title`, `description`, `tags`
+- `installCommand`, `promptConfig`, `usageExample`
+- `createdAt`, `author` (→ User)
+
+The `GetSkills` query in `dataconnect/connectors/queries.gql` searches by title/description, orders by `createdAt DESC`, and is exposed at `@auth(level: PUBLIC)` so the catalog is readable without signing in.
+
+After changing the schema or connectors, regenerate the client SDK:
+
+```bash
+firebase dataconnect:sdk:generate
+```
+
+## Routes
+
+| Path | Description |
+| --- | --- |
+| `/` | Home — hero, browse/publish CTAs, recently created skills |
+| `/sign-in/*` | Clerk sign-in |
+| `/sign-up/*` | Clerk sign-up |
+
+Planned routes referenced in the UI: `/skills` (full registry), `/skills/new` (publish flow).
+
+## Getting started
+
+### Prerequisites
+
+- Node.js 18+
+- [Firebase CLI](https://firebase.google.com/docs/cli) (for Data Connect emulator and SDK generation)
+- Clerk application
+- Firebase project with Data Connect enabled
+
+### Install and run
 
 ```bash
 npm install
 npm run dev
 ```
 
-# Building For Production
+The dev server starts on port 3000.
 
-To build this application for production:
+### Environment variables
 
-```bash
-npm run build
-```
-
-## Testing
-
-This project uses [Vitest](https://vitest.dev/) for testing. You can run the tests with:
+Copy `.env.example` to `.env.local` and fill in the values:
 
 ```bash
-npm run test
+# Clerk
+VITE_CLERK_PUBLISHABLE_KEY=pk_test_...
+
+# Firebase (from Firebase console → Project settings)
+VITE_FIREBASE_API_KEY=
+VITE_FIREBASE_AUTH_DOMAIN=
+VITE_FIREBASE_PROJECT_ID=
+VITE_FIREBASE_APP_ID=
+
+# PostHog
+VITE_PUBLIC_POSTHOG_PROJECT_TOKEN=
+VITE_PUBLIC_POSTHOG_HOST=https://us.posthog.com   # optional
 ```
 
-## Styling
+Clerk also requires a secret key for server-side middleware. Set `CLERK_SECRET_KEY` in your environment following the [Clerk TanStack Start docs](https://clerk.com/docs/quickstarts/tanstack-start).
 
-This project uses [Tailwind CSS](https://tailwindcss.com/) for styling.
+### Firebase Data Connect (local)
 
-### Removing Tailwind CSS
-
-If you prefer not to use Tailwind CSS:
-
-1. Remove the demo pages in `src/routes/demo/`
-2. Replace the Tailwind import in `src/styles.css` with your own styles
-3. Remove `tailwindcss()` from the plugins array in `vite.config.ts`
-4. Uninstall the packages: `npm install @tailwindcss/vite tailwindcss -D`
-
-## Linting & Formatting
-
-This project uses [Biome](https://biomejs.dev/) for linting and formatting. The following scripts are available:
-
+Start the Data Connect emulator alongside the app:
 
 ```bash
-npm run lint
-npm run format
-npm run check
+firebase emulators:start --only dataconnect
 ```
 
+The emulator uses PGlite data stored under `dataconnect/.dataconnect/pgliteData`. Seed or inspect data with the `.gql` operation files in `dataconnect/` (e.g. `Skill_insert.gql`, `User_insert.gql`).
 
-## Setting up Clerk
+## Development
 
-1. Sign up at [clerk.com](https://clerk.com) and create an application
-2. Copy the **Publishable Key** from the Clerk dashboard
-3. Set it in your `.env.local`:
-   ```bash
-   VITE_CLERK_PUBLISHABLE_KEY=pk_test_...
-   ```
-4. Visit the demo route at `/demo/clerk` once `npm run dev` is running
-
-### What's wired up
-
-- **`<ClerkProvider>`** at the app root (`src/integrations/clerk/provider.tsx`) handles auth context for the whole tree
-- **`<SignInButton>` / `<UserButton>`** in the header swap based on auth state
-- **`/demo/clerk`** shows Clerk's prebuilt sign-in UI and a signed-in greeting
-
-### Protecting a route
-
-Wrap any component in `<SignedIn>` / `<SignedOut>`:
-
-```tsx
-import { SignedIn, SignedOut, RedirectToSignIn } from '@clerk/clerk-react'
-
-function ProtectedPage() {
-  return (
-    <>
-      <SignedIn>
-        <YourPageContent />
-      </SignedIn>
-      <SignedOut>
-        <RedirectToSignIn />
-      </SignedOut>
-    </>
-  )
-}
+```bash
+npm run dev          # Start dev server (port 3000)
+npm run build        # Production build
+npm run preview      # Preview production build
+npm run test         # Run Vitest tests
+npm run lint         # Biome lint
+npm run format       # Biome format
+npm run check        # Biome lint + format
 ```
 
-For server-side checks (route loaders, server functions), see the Clerk docs on [`auth()`](https://clerk.com/docs/references/backend/auth).
-
-### Production checklist
-
-- Replace the test keys with **production keys** from a dedicated production Clerk instance
-- Configure your production domain under **Domains** in the Clerk dashboard
-- Set up social providers (Google, GitHub, etc.) under **User & Authentication → Social Connections**
-
-
-## Shadcn
-
-Add components using the latest version of [Shadcn](https://ui.shadcn.com/).
+### Adding shadcn components
 
 ```bash
 pnpm dlx shadcn@latest add button
 ```
 
+### PostHog in development
 
+Vite proxies `/ingest` requests to PostHog so analytics work locally without CORS issues. Event captures include `browse_registry_clicked`, `publish_skill_clicked`, `install_command_copied`, `skill_card_opened`, and auth page views.
 
-## Routing
+## Deployment
 
-This project uses [TanStack Router](https://tanstack.com/router) with file-based routing. Routes are managed as files in `src/routes`.
+- **Frontend** — Build with `npm run build` and deploy the TanStack Start output to your hosting target (Firebase App Hosting, Vercel, etc.).
+- **Database** — Deploy the Data Connect schema and connectors to the Firebase project (`skilledagent-31537`):
 
-### Adding A Route
+  ```bash
+  firebase deploy --only dataconnect
+  ```
 
-To add a new route to your application just add a new file in the `./src/routes` directory.
+- **Secrets** — Use production Clerk and Firebase credentials. Replace PostHog test tokens with production project tokens.
 
-TanStack will automatically generate the content of the route file for you.
+## Learn more
 
-Now that you have two routes you can use a `Link` component to navigate between them.
-
-### Adding Links
-
-To use SPA (Single Page Application) navigation you will need to import the `Link` component from `@tanstack/react-router`.
-
-```tsx
-import { Link } from "@tanstack/react-router";
-```
-
-Then anywhere in your JSX you can use it like so:
-
-```tsx
-<Link to="/about">About</Link>
-```
-
-This will create a link that will navigate to the `/about` route.
-
-More information on the `Link` component can be found in the [Link documentation](https://tanstack.com/router/v1/docs/framework/react/api/router/linkComponent).
-
-### Using A Layout
-
-In the File Based Routing setup the layout is located in `src/routes/__root.tsx`. Anything you add to the root route will appear in all the routes. The route content will appear in the JSX where you render `{children}` in the `shellComponent`.
-
-Here is an example layout that includes a header:
-
-```tsx
-import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
-
-export const Route = createRootRoute({
-  head: () => ({
-    meta: [
-      { charSet: 'utf-8' },
-      { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-      { title: 'My App' },
-    ],
-  }),
-  shellComponent: ({ children }) => (
-    <html lang="en">
-      <head>
-        <HeadContent />
-      </head>
-      <body>
-        <header>
-          <nav>
-            <Link to="/">Home</Link>
-            <Link to="/about">About</Link>
-          </nav>
-        </header>
-        {children}
-        <Scripts />
-      </body>
-    </html>
-  ),
-})
-```
-
-More information on layouts can be found in the [Layouts documentation](https://tanstack.com/router/latest/docs/framework/react/guide/routing-concepts#layouts).
-
-## Server Functions
-
-TanStack Start provides server functions that allow you to write server-side code that seamlessly integrates with your client components.
-
-```tsx
-import { createServerFn } from '@tanstack/react-start'
-
-const getServerTime = createServerFn({
-  method: 'GET',
-}).handler(async () => {
-  return new Date().toISOString()
-})
-
-// Use in a component
-function MyComponent() {
-  const [time, setTime] = useState('')
-  
-  useEffect(() => {
-    getServerTime().then(setTime)
-  }, [])
-  
-  return <div>Server time: {time}</div>
-}
-```
-
-## API Routes
-
-You can create API routes by using the `server` property in your route definitions:
-
-```tsx
-import { createFileRoute } from '@tanstack/react-router'
-import { json } from '@tanstack/react-start'
-
-export const Route = createFileRoute('/api/hello')({
-  server: {
-    handlers: {
-      GET: () => json({ message: 'Hello, World!' }),
-    },
-  },
-})
-```
-
-## Data Fetching
-
-There are multiple ways to fetch data in your application. You can use TanStack Query to fetch data from a server. But you can also use the `loader` functionality built into TanStack Router to load the data for a route before it's rendered.
-
-For example:
-
-```tsx
-import { createFileRoute } from '@tanstack/react-router'
-
-export const Route = createFileRoute('/people')({
-  loader: async () => {
-    const response = await fetch('https://swapi.dev/api/people')
-    return response.json()
-  },
-  component: PeopleComponent,
-})
-
-function PeopleComponent() {
-  const data = Route.useLoaderData()
-  return (
-    <ul>
-      {data.results.map((person) => (
-        <li key={person.name}>{person.name}</li>
-      ))}
-    </ul>
-  )
-}
-```
-
-Loaders simplify your data fetching logic dramatically. Check out more information in the [Loader documentation](https://tanstack.com/router/latest/docs/framework/react/guide/data-loading#loader-parameters).
-
-# Demo files
-
-Files prefixed with `demo` can be safely deleted. They are there to provide a starting point for you to play around with the features you've installed.
-
-# Learn More
-
-You can learn more about all of the offerings from TanStack in the [TanStack documentation](https://tanstack.com).
-
-For TanStack Start specific documentation, visit [TanStack Start](https://tanstack.com/start).
+- [TanStack Start](https://tanstack.com/start)
+- [Firebase Data Connect](https://firebase.google.com/docs/data-connect)
+- [Clerk + TanStack Start](https://clerk.com/docs/quickstarts/tanstack-start)
